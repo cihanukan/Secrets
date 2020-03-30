@@ -2,9 +2,10 @@ require('dotenv').config();
 const express = require("express");
 const mongoose = require("mongoose");
 const bodyParser = require("body-parser");
-const encrypt = require("mongoose-encryption");
-const md5 = require("md5");
+//const encrypt = require("mongoose-encryption");
+const bcrypt = require("bcrypt");
 const ejs = require("ejs");
+const saltRounds = 10;
 
 const app = express();
 app.use(express.static('public'));
@@ -45,17 +46,19 @@ app.get("/register", function(req, res){
 });
 
 app.post("/register", function(req, res){
-    const newUser = new User({
-        name: req.body.username,
-        password: md5(req.body.password)
-    })
 
-    newUser.save(function(err){
-        if(err){
-            console.log(err);
-        }else{
-            res.render("secrets");
-        }
+    bcrypt.hash(req.body.password, saltRounds, function(err, hash){
+        const newUser = new User({
+            name: req.body.username,
+            password: hash
+        })
+        newUser.save(function(err){
+            if(err){
+                console.log(err);
+            }else{
+                res.render("secrets");
+            }
+        })
     })
 });
 
@@ -65,16 +68,21 @@ app.get("/logout",function(req, res){
 
 app.post("/login", function(req, res){
     const username = req.body.username;
-    const password = md5(req.body.password);
+    const password = req.body.password;
 
     User.findOne({name: username}, function(err, foundUser){
         if(err){
             console.log(err);
         }else{
             if(foundUser){
-                if(foundUser.password === password){
-                    res.render("secrets")
-                }
+                bcrypt.compare(password, foundUser.password, function(err, result){
+                    if(result===true){
+                        res.render("secrets");
+                    }
+                    else{
+                        res.send("Cannot login.");
+                    }
+                })
             }
         }
     })
