@@ -2,36 +2,44 @@ require('dotenv').config();
 const express = require("express");
 const mongoose = require("mongoose");
 const bodyParser = require("body-parser");
-//const encrypt = require("mongoose-encryption");
-const bcrypt = require("bcrypt");
 const ejs = require("ejs");
-const saltRounds = 10;
+const session = require("express-session");
+const passport = require("passport");
+const passportLocalMongoose = require("passport-local-mongoose");
 
 const app = express();
 app.use(express.static('public'));
 app.use(bodyParser.urlencoded({extended: true}));
 app.set('view engine', 'ejs');
 
+//app.set('trust prox' ,1); // trust first proxy
+
+app.use(session({
+    secret: "This is our little secret.",
+    resave: false,
+    saveUninitialized: false
+}));
+
+app.use(passport.initialize());
+app.use(passport.session()); // tell passport to deal with session
+
 mongoose.connect("mongodb://localhost:27017/userDB", {useNewUrlParser: true, useUnifiedTopology: true});
+mongoose.set("useCreateIndex", true); // Added to solve deprecation warning
 
 //Schema
 const userSchema = new mongoose.Schema({
-    name: {
-        type: String,
-        required: true
-    },
-    password: {
-        type: String,
-        required: true
-    }
+    name: String,
+    password: String
 });
 
-
-//Encryption 
-//userSchema.plugin(encrypt, {secret: process.env.SECRET , encryptedFields: ["password"]});
+userSchema.plugin(passportLocalMongoose); // we use it to hash and salt password and save to our db
 
 //Model
-const User = mongoose.model("User", userSchema);
+const User =  mongoose.model("User", userSchema);
+
+passport.use(User.createStrategy());
+passport.serializeUser(User.serializeUser()); // insert information to fortune cookie
+passport.deserializeUser(User.deserializeUser()); // break the cookies to see informations
 
 app.get("/", function(req, res){
     res.render("home");
@@ -45,47 +53,50 @@ app.get("/register", function(req, res){
     res.render("register");
 });
 
-app.post("/register", function(req, res){
+app.get("/secrets", function(req, res){
+    if(req.isAuthenticated()){
+        res.render("secrets");
+    }else{
+        res.redirect("/login");
+    }
+})
 
-    bcrypt.hash(req.body.password, saltRounds, function(err, hash){
-        const newUser = new User({
-            name: req.body.username,
-            password: hash
-        })
-        newUser.save(function(err){
-            if(err){
-                console.log(err);
-            }else{
-                res.render("secrets");
-            }
-        })
-    })
+app.get('/logout', function(req, res){
+    req.logout();
+    res.redirect('/');
 });
 
-app.get("/logout",function(req, res){
-    res.redirect("/");
+app.post("/register", function(req, res){
+
+    User.register({username: req.body.username}, req.body.password, function(err, user){
+        if(err){
+            console.log(err);
+            res.redirect("/register");
+        }else{
+            passport.authenticate("local")(req, res, function(){ // calback will be triggered if the authentication is successful
+                res.redirect("/secrets");
+            })
+        }
+    })
 });
 
 app.post("/login", function(req, res){
-    const username = req.body.username;
-    const password = req.body.password;
 
-    User.findOne({name: username}, function(err, foundUser){
+    const user = new User({
+        username: req.body.username,
+        password: req.body.password
+    })
+
+    req.login(user, function(err){
         if(err){
             console.log(err);
         }else{
-            if(foundUser){
-                bcrypt.compare(password, foundUser.password, function(err, result){
-                    if(result===true){
-                        res.render("secrets");
-                    }
-                    else{
-                        res.send("Cannot login.");
-                    }
-                })
-            }
+            passport.authenticate("local")(req, res, function(){ // calback will be triggered if the authentication is successful
+                res.redirect("/secrets");
+            })
         }
     })
+
 });
 
 let port = process.env.PORT;
