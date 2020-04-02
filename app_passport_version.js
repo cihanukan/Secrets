@@ -6,10 +6,6 @@ const ejs = require("ejs");
 const session = require("express-session");
 const passport = require("passport");
 const passportLocalMongoose = require("passport-local-mongoose");
-const GoogleStrategy = require('passport-google-oauth20').Strategy;
-const FacebookStrategy = require("passport-facebook").Strategy;
-const findOrCreate = require('mongoose-findorcreate') // to use findOrCreate function for google authentication
-
 
 const app = express();
 app.use(express.static('public'));
@@ -33,89 +29,21 @@ mongoose.set("useCreateIndex", true); // Added to solve deprecation warning
 //Schema
 const userSchema = new mongoose.Schema({
     name: String,
-    password: String,
-    googleId: String,
-    facebookId: String
+    password: String
 });
 
 userSchema.plugin(passportLocalMongoose); // we use it to hash and salt password and save to our db
-userSchema.plugin(findOrCreate); // Added as a plugin to initiate with our schema
 
 //Model
 const User =  mongoose.model("User", userSchema);
 
 passport.use(User.createStrategy());
-
-//These methods of serialization will give as error. Becasue we won't e able to serialize the infos which come from google auth.
-// passport.serializeUser(User.serializeUser()); // insert information to fortune cookie
-// passport.deserializeUser(User.deserializeUser()); // break the cookies to see informations
-
-
-//These methods are fit for every type of serialization.
-passport.serializeUser(function(user, done) {
-    done(null, user.id);
-  });
-  
-  passport.deserializeUser(function(id, done) {
-    User.findById(id, function(err, user) {
-      done(err, user);
-    });
-  });
-
-//Google Strategy
-passport.use(new GoogleStrategy({
-    clientID: process.env.GOOGLE_CLIENT_ID,
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    callbackURL: process.env.GOOGLE_CALLBACK_URL
-  },
-  function(accessToken, refreshToken, profile, cb) {
-    //   console.log("ACCESS TOKEN " + accessToken)
-    //   console.log("REFRESH TOKEN " + refreshToken)
-    //   console.log("USER PROFILE " + profile)
-    User.findOrCreate({ googleId: profile.id }, function (err, user) {
-      return cb(err, user);
-    });
-  }
-));
-
-//Facebook Strategy
-
-passport.use(new FacebookStrategy({
-    clientID: process.env.FACEBOOK_APP_ID,
-    clientSecret: process.env.FACEBOOK_APP_SECRET,
-    callbackURL: process.env.FACEBOOK_CALLBACK_URL
-  },
-  function(accessToken, refreshToken, profile, cb) {
-    User.findOrCreate({ facebookId: profile.id }, function (err, user) {
-      return cb(err, user);
-    });
-  }
-));
+passport.serializeUser(User.serializeUser()); // insert information to fortune cookie
+passport.deserializeUser(User.deserializeUser()); // break the cookies to see informations
 
 app.get("/", function(req, res){
     res.render("home");
 });
-
-app.get("/auth/google",
-  passport.authenticate("google", { scope: ["profile"] }));
-
-
-app.get("/auth/google/secrets", 
-  passport.authenticate("google", { failureRedirect: "/login" }),
-  function(req, res) {
-    // Successful authentication, redirect to secrets page.
-    res.redirect("/secrets");
-});
-
-app.get("/auth/facebook",
-  passport.authenticate("facebook"));
-
-app.get("/auth/facebook/secrets",
-  passport.authenticate("facebook", { failureRedirect: "/login" }),
-  function(req, res) {
-    // Successful authentication, redirect to secrets.
-    res.redirect("/secrets");
-  });
 
 app.get("/login", function(req, res){
     res.render("login");
